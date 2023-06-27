@@ -1,0 +1,16 @@
+# You can use this file to create a conda environment for this pipeline:
+#   conda env create -f environment.yml
+name: cnv_wes
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bwa=0.7.17
+  - bedtools=2.24.0
+  - fastqc
+  - picard
+  - samtools
+  - qualimap
+  - multiqc
+  - cutadapt

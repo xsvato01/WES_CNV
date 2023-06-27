@@ -1,0 +1,22 @@
+runs:
+  - name: BRNO0627
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO0627/
+    type: fastq
+  - name: BRNO1727
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO1727/
+    type: fastq
+  - name: BRNO1837
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO1837/
+    type: fastq
+  - name: BRNO2013
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2013/
+    type: fastq
+  - name: BRNO2170
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2170/
+    type: fastq
+  - name: BRNO2641
+    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2641/
+    type: fastq
+  - name: BRNO1865
+    path: /mnt/shared/MedGen/ONTdata/Sabina_HMW/BRNO1865
+    type: fast5
