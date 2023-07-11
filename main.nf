@@ -28,7 +28,7 @@ process CUTADAPT{
 
 	script:
 	"""
-	cutadapt -m 10 -q 20 -j 8 -o trimmed_${reads}_R1.fastq.gz -p trimmed_${reads[1]}_R2.fastq.gz ${reads}_R1.fastq.gz ${reads}_R2.fastq.gz
+	cutadapt -m 10 -q 20 -j 8 -o trimmed_${reads}R1.fastq.gz -p trimmed${reads[1]}_R2.fastq.gz ${reads}R1.fastq.gz ${reads}R2.fastq.gz
 	"""
 }
 
@@ -77,8 +77,8 @@ process DEDUPLICATE {
 	tuple val(name), path(sortedBam), path(sortedBai)
 	
 	output:
-		tuple val(name), path(${name}.deduplicated.bam), path(sortedBai)
- 	path "*.markdup.txt"
+		tuple val(name), path("${name}.deduplicated.bam"), path(sortedBai)
+  path "*.markdup.txt"
 
 	script:
 	"""
@@ -114,8 +114,9 @@ process MULTIQC {
 	publishDir "${params.outdir}/multiqc/", mode:'copy'
 
 	input:
-		tuple val(name), path("*")
-		path(markdupTxt)
+	path('*')
+		// tuple val(name), path("*")
+		// path(markdupTxt)
 
 	output:
 	path "*"
@@ -131,7 +132,8 @@ process MULTIQC {
 
 workflow {
 
-samplesList = channel.fromList(params.samplesheet)
+samplesList = channel.fromList(params.samples)
+samplesList.view()
 
  fastqced =	FASTQC(samplesList)
 	cutAdapted = CUTADAPT(samplesList)
