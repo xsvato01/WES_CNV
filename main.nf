@@ -4,15 +4,14 @@ process FASTQC {
 	tag "FASTQC on $name using $task.cpus CPUs and $task.memory memory"
 
 	input:
-	tuple val(name), path(reads)
+	tuple val(name), val(reads)
 
 	output:
 	path '*'
 
 	script:
 	"""
-	fastqc ${reads}* -o ./
-	rm -r ?
+	fastqc ${reads}R1.fastq.gz ${reads}R2.fastq.gz -o ./
 	"""
 }
 
@@ -21,14 +20,14 @@ process CUTADAPT{
 	publishDir "${params.outdir}/trimmed/${name}/", mode:'copy'
 		
 	input:
-	tuple val(name), path(reads)
+	tuple val(name), val(reads)
 	
 	output:
 	tuple val("trimmed_${name}"), path("trimmed_*.fastq.gz")
 
 	script:
 	"""
-	cutadapt -m 10 -q 20 -j 8 -o trimmed_${reads}R1.fastq.gz -p trimmed${reads[1]}_R2.fastq.gz ${reads}R1.fastq.gz ${reads}R2.fastq.gz
+	cutadapt -m 10 -q 20 -j 8 -o trimmed_${name}_R1.fastq.gz -p trimmed${name}_R2.fastq.gz ${reads}R1.fastq.gz ${reads}R2.fastq.gz
 	"""
 }
 
@@ -83,7 +82,7 @@ process DEDUPLICATE {
 	script:
 	"""
 	picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
-	picard BuildBamIndex INPUT=${name}.srt.markdup.bam
+	picard BuildBamIndex INPUT=${name}.markdup.bam
  samtools view -b -F 0x400 -o ${name}.deduplicated.bam ${name}.markdup.bam
 	"""
 }
@@ -99,6 +98,7 @@ process QC_STATS {
 	
 	script:
 	"""
+	samtools view -H $bam
 	qualimap bamqc -bam $bam -gff ${params.covbed} -outdir ${name} -outfile ${name}.qualimap -outformat HTML
 	samtools flagstat $bam > ${name}.flagstat
 	samtools stats $bam > ${name}.samstats

@@ -21,10 +21,10 @@ samples:
     path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/103-1A_
   - name: 105-1A
     path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/105-1A_
-  - name: 1061A
-    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/1061A_
-  - name: 1071A
-    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/1071A_
+  - name: 106-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/106-1A_
+  - name: 107-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/107-1A_
   - name: 115-1A
     path: /mnt/shared/MedGen/sequencing_results/primary_data/220722_ZV_Exom42/raw_fastq/115-1A_
   - name: 116-1A
