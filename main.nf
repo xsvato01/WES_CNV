@@ -11,7 +11,7 @@ process FASTQC {
 
 	script:
 	"""
-	fastqc $reads -o ./
+	fastqc ${reads}* -o ./
 	rm -r ?
 	"""
 }
@@ -28,7 +28,7 @@ process CUTADAPT{
 
 	script:
 	"""
-	cutadapt -m 10 -q 20 -j 8 -o trimmed_${reads[0]} -p trimmed_${reads[1]} ${reads}
+	cutadapt -m 10 -q 20 -j 8 -o trimmed_${reads}_R1.fastq.gz -p trimmed_${reads[1]}_R2.fastq.gz ${reads}_R1.fastq.gz ${reads}_R2.fastq.gz
 	"""
 }
 
@@ -45,7 +45,7 @@ process BWA_ALIGN {
 	script:
 	rg = "\"@RG\\tID:${name}\\tSM:${name}\\tLB:${name}\\tPL:ILLUMINA\""
 	"""
-	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex} $reads > ${name}.sam
+	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex} ${reads}* > ${name}.sam
 	samtools view -Sb ${name}.sam -o ${name}.bam
 	"""
 }
@@ -71,7 +71,7 @@ process SORT_INDEX {
 
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${params.outdir}/bams/", mode:'copy'
+	publishDir "${params.outdir}/mapped/", mode:'copy'
 
 	input:
 	tuple val(name), path(sortedBam), path(sortedBai)
@@ -131,7 +131,7 @@ process MULTIQC {
 
 workflow {
 
-samplesList = channel.fromList(params.runs)
+samplesList = channel.fromList(params.samplesheet)
 
  fastqced =	FASTQC(samplesList)
 	cutAdapted = CUTADAPT(samplesList)
@@ -139,7 +139,5 @@ samplesList = channel.fromList(params.runs)
  sortedBam =	SORT_INDEX(bam)
 	deduplicatedBam = DEDUPLICATE(sortedBam)
  stats =	QC_STATS(sortedBam)
-
-
-  MULTIQC(stats[0].mix(fastqced).mix(deduplicatedBam[1]).collect())
+ MULTIQC(stats[0].mix(fastqced).mix(deduplicatedBam[1]).collect())
 }

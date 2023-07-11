@@ -1,22 +1,33 @@
-runs:
-  - name: BRNO0627
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO0627/
-    type: fastq
-  - name: BRNO1727
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO1727/
-    type: fastq
-  - name: BRNO1837
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO1837/
-    type: fastq
-  - name: BRNO2013
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2013/
-    type: fastq
-  - name: BRNO2170
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2170/
-    type: fastq
-  - name: BRNO2641
-    path: /storage/share/110000-MED/110323-imgg/111323-plevova/01.NanoBreak/data/samples/BRNO2641/
-    type: fastq
-  - name: BRNO1865
-    path: /mnt/shared/MedGen/ONTdata/Sabina_HMW/BRNO1865
-    type: fast5
+samples:
+  - name: VYM
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220722_ZV_Exom42/raw_fastq/VYM_
+  - name: 9101A
+    path: /mnt/shared/MedGen/sequencing_results/stage507_zv35/results/input_files/raw_fastq/9101A_
+  - name: 9501A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom37/raw_fastq/9501A_
+  - name: 9502A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom37/raw_fastq/9502A_
+  - name: 9503A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom37/raw_fastq/9503A_
+  - name: 9601A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom37/raw_fastq/9601A_
+  - name: 9901A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom38/raw_fastq/9901A_
+  - name: 1001A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom38/raw_fastq/1001A_
+  - name: 1021A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220304_ZV_Exom38/raw_fastq/1021A_
+  - name: 103-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/103-1A_
+  - name: 105-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/105-1A_
+  - name: 1061A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/1061A_
+  - name: 1071A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220511_ZV_Exom41/raw_fastq/1071A_
+  - name: 115-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220722_ZV_Exom42/raw_fastq/115-1A_
+  - name: 116-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220816_ZV_WES_43-merged/raw_fastq/116-1A_
+  - name: 117-1A
+    path: /mnt/shared/MedGen/sequencing_results/primary_data/220816_ZV_WES_43-merged/raw_fastq/117-1A_
