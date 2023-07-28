@@ -71,21 +71,81 @@ process SORT_INDEX {
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/mapped/${name}", mode:'copy'
+		container "registry.gitlab.ics.muni.cz:443/450402/wes_cnv:6"
+
 
 	input:
 	tuple val(name), path(sortedBam), path(sortedBai)
 	
 	output:
-		tuple val(name), path("${name}.deduplicated.bam"), path(sortedBai)
+		tuple val(name), path("${name}.deduplicated.bam"), path("${name}.deduplicated.bai")
   path "*.txt"
 
 	script:
 	"""
 	#picard UmiAwareMarkDuplicatesWithMateCigar I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt UMI_METRICS=${name}_umi_metrics.txt
 	picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
-	umi_tools dedup -I ${sortedBam} --umi-separator=_ --output-stats=${name}_dedup_stats.txt --output-bam ${name}.deduplicated.bam
+	umi_tools dedup --umi-separator=_ --output-stats=${name}_dedup_stats.txt --stdin=${sortedBam} --stdout=${name}.deduplicated.bam
 	samtools index ${name}.deduplicated.bam ${name}.deduplicated.bai
  #samtools view -b -F 0x400 -o ${name}.deduplicated.bam ${name}.markdup.bam
+	"""
+}
+
+
+process CNVKIT_COVERAGE {
+	tag "CNVKIT_COVERAGE on $name using $task.cpus CPUs and $task.memory memory"
+		publishDir "${params.outdir}/cnvkit/${name}", mode:'copy'
+
+
+	input:
+	tuple val(name), path(bam), path(bai)
+
+	output:
+	tuple val(name), path("*targetcoverage.cnn"), path("*antitargetcoverage.cnn")
+	
+	script:
+	"""
+	cnvkit.py coverage ${bam} ${params.targetBed} -o ${name}.targetcoverage.cnn
+	cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
+	"""
+}
+
+process CNVKIT_REFERENCE {
+	tag "CNVKIT_REFERENCE using $task.cpus CPUs and $task.memory memory"
+	publishDir "${params.outdir}/cnvkit/reference", mode:'copy'
+
+
+	input:
+	path "*"
+
+	output:
+ path "Reference.cnn"	
+
+	script:
+	"""
+	cnvkit.py reference *coverage.cnn -f ${params.ref}/GRCh38-p10.fa -o Reference.cnn
+	"""
+}
+
+process CNVKIT_TUMOR {
+	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
+		publishDir "${params.outdir}/cnvkit/${name}", mode:'copy'
+
+
+	input:
+	tuple val(name), path(targetCov), path(antitargetCov)
+	path "reference"	
+
+	output:
+ path "*"	
+
+	script:
+	"""
+ cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}.cnr
+ cnvkit.py segment ${name}.cnr -o ${name}.cns
+
+ cnvkit.py scatter ${name}.cnr -s ${name}.cns --y-max=3 --y-min=-3 -o ${name}-scatter.png
+ cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
 	"""
 }
 
@@ -124,7 +184,6 @@ process MULTIQC {
 
 	script:
 	"""
-
 	multiqc . -n MultiQC.html
 	"""
 
@@ -134,8 +193,6 @@ process MULTIQC {
 workflow {
 
 samplesList = channel.fromList(params.samples)
-samplesList.view()
-
  fastqced =	FASTQC(samplesList)
 	cutAdapted = CUTADAPT(samplesList)
 	bam = BWA_ALIGN(cutAdapted)
@@ -143,7 +200,8 @@ samplesList.view()
 	deduplicatedBam = DEDUPLICATE(sortedBam)
  stats =	QC_STATS(sortedBam)
 
-	mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
+	mqcChannel = stats.mix(cutAdapted).mix(deduplicatedBam[1]).collect()
 	mqcChannel.view()
  MULTIQC(mqcChannel)
+	coverage = CNVKIT_COVERAGE(deduplicated[0])
 }
