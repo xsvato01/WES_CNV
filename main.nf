@@ -4,7 +4,7 @@ process FASTQC {
 	tag "FASTQC on $name using $task.cpus CPUs and $task.memory memory"
 
 	input:
-	tuple val(name), val(reads)
+	tuple val(name), val(reads), val(type)
 
 	output:
 	path '*'
@@ -20,10 +20,10 @@ process CUTADAPT{
 	publishDir "${params.outdir}/trimmedFQ/", mode:'copy'
 		
 	input:
-	tuple val(name), val(reads)
+	tuple val(name), val(reads), val(type)
 	
 	output:
-	tuple val("${name}"), path("*.fastq.gz")
+	tuple val("${name}"), path("*.fastq.gz"), val(type)
 
 	script:
 	"""
@@ -36,10 +36,10 @@ process BWA_ALIGN {
 	tag "BWA_ALIGN on $name using $task.cpus CPUs and $task.memory memory"
 
 	input:
-	tuple val(name), path(reads)
+	tuple val(name), path(reads), val(type)
 
 	output:
-	tuple val(name), path("${name}.bam")
+	tuple val(name), path("${name}.bam"), val(type)
 
 	script:
 	rg = "\"@RG\\tID:${name}\\tSM:${name}\\tLB:${name}\\tPL:ILLUMINA\""
@@ -55,10 +55,10 @@ process SORT_INDEX {
   publishDir "${params.outdir}/mapped/", mode:'copy'
 
 	input:
-	tuple val(name), path(bam)
+	tuple val(name), path(bam), val(type)
 
 	output:
-	tuple val(name), path("${name}.sorted.bam"), path("${name}.sorted.bai")
+	tuple val(name), path("${name}.sorted.bam"), path("${name}.sorted.bai"), val(type)
 
 
 	script:
@@ -71,14 +71,12 @@ process SORT_INDEX {
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/mapped/${name}", mode:'copy'
-		container "registry.gitlab.ics.muni.cz:443/450402/wes_cnv:6"
-
 
 	input:
-	tuple val(name), path(sortedBam), path(sortedBai)
+	tuple val(name), path(sortedBam), path(sortedBai), val(type)
 	
 	output:
-		tuple val(name), path("${name}.deduplicated.bam"), path("${name}.deduplicated.bai")
+		tuple val(name), path("${name}.deduplicated.bam"), path("${name}.deduplicated.bai"), val(type)
   path "*.txt"
 
 	script:
@@ -98,10 +96,10 @@ process CNVKIT_COVERAGE {
 
 
 	input:
-	tuple val(name), path(bam), path(bai)
+	tuple val(name), path(bam), path(bai), val(type)
 
 	output:
-	tuple val(name), path("*targetcoverage.cnn"), path("*antitargetcoverage.cnn")
+	tuple val(name), path("*targetcoverage.cnn"), path("*antitargetcoverage.cnn"), val(type)
 	
 	script:
 	"""
@@ -198,10 +196,20 @@ samplesList = channel.fromList(params.samples)
 	bam = BWA_ALIGN(cutAdapted)
  sortedBam =	SORT_INDEX(bam)
 	deduplicatedBam = DEDUPLICATE(sortedBam)
- stats =	QC_STATS(sortedBam)
+	coverage = CNVKIT_COVERAGE(deduplicatedBam[0])
 
-	mqcChannel = stats.mix(cutAdapted).mix(deduplicatedBam[1]).collect()
-	mqcChannel.view()
- MULTIQC(mqcChannel)
-	coverage = CNVKIT_COVERAGE(deduplicated[0])
+ coverage
+ .branch {
+					Normal: it.type == "normal"
+					Tumor: it.type == "tumor"
+ 	}.set{sorted}
+
+cnvkitReference = CNVKIT_REFERENCE(sorted.Normal.collect())
+tumorWithReference = sorted.Tumor.combine(cnvkitReference)
+tumorWithReference.view()
+
+ // stats =	QC_STATS(deduplicatedBam[0])
+	// mqcChannel = stats.mix(cutAdapted).mix(deduplicatedBam[1]).collect()
+	// mqcChannel.view()
+ // MULTIQC(mqcChannel)
 }
