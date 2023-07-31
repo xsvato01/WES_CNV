@@ -1,39 +1,43 @@
 
 
 process FASTQC {
-	tag "FASTQC on $name using $task.cpus CPUs and $task.memory memory"
+	tag "FASTQC on $sample.name using $task.cpus CPUs and $task.memory memory"
 
 	input:
-	tuple val(name), val(reads), val(type)
+	val(sample)
 
 	output:
 	path '*'
 
 	script:
 	"""
-	fastqc ${reads}_R1.fastq.gz ${reads}_R2.fastq.gz -o ./
+	fastqc ${sample.path}_R1.fastq.gz ${sample.path}_R2.fastq.gz -o ./
 	"""
 }
 
 process CUTADAPT{
-	tag "CUTADAPT on $name using $task.cpus CPUs and $task.memory memory" 
+	tag "CUTADAPT on $sample.name using $task.cpus CPUs and $task.memory memory" 
 	publishDir "${params.outdir}/trimmedFQ/", mode:'copy'
+	label "small_mem"
 		
 	input:
-	tuple val(name), val(reads), val(type)
+	val(sample)
 	
 	output:
-	tuple val("${name}"), path("*.fastq.gz"), val(type)
+	tuple val(sample.name), path("*.fastq.gz"), val(sample.type)
 
 	script:
 	"""
-	cutadapt -m 10 -q 20 -j 8 -o ${name}_trim_R1.fastq.gz -p ${name}_trim_R2.fastq.gz ${reads}_R1.fastq.gz ${reads}_R2.fastq.gz
+	cutadapt -m 10 -q 20 -j 8 -o ${sample.name}_trim_R1.fastq.gz -p ${sample.name}_trim_R2.fastq.gz ${sample.path}_R1.fastq.gz ${sample.path}_R2.fastq.gz
 	"""
 }
 
 
 process BWA_ALIGN {
 	tag "BWA_ALIGN on $name using $task.cpus CPUs and $task.memory memory"
+	label "small_mem"
+	label "small_cpus"
+
 
 	input:
 	tuple val(name), path(reads), val(type)
@@ -52,7 +56,7 @@ process BWA_ALIGN {
 
 process SORT_INDEX {
   tag "Sort index on $name using $task.cpus CPUs and $task.memory memory"
-  publishDir "${params.outdir}/mapped/", mode:'copy'
+  publishDir "${params.outdir}/mapped/${name}", mode:'copy'
 
 	input:
 	tuple val(name), path(bam), val(type)
@@ -71,6 +75,8 @@ process SORT_INDEX {
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/mapped/${name}", mode:'copy'
+	label "small_mem"
+
 
 	input:
 	tuple val(name), path(sortedBam), path(sortedBai), val(type)
@@ -92,14 +98,14 @@ process DEDUPLICATE {
 
 process CNVKIT_COVERAGE {
 	tag "CNVKIT_COVERAGE on $name using $task.cpus CPUs and $task.memory memory"
-		publishDir "${params.outdir}/cnvkit/${name}", mode:'copy'
+		publishDir "${params.outdir}/cnvkit/${type}/${name}", mode:'copy'
 
 
 	input:
 	tuple val(name), path(bam), path(bai), val(type)
 
 	output:
-	tuple val(name), path("*targetcoverage.cnn"), path("*antitargetcoverage.cnn"), val(type)
+	tuple val(name), path("${name}.targetcoverage.cnn"), path("${name}.antitargetcoverage.cnn"), val(type)
 	
 	script:
 	"""
@@ -127,20 +133,22 @@ process CNVKIT_REFERENCE {
 
 process CNVKIT_TUMOR {
 	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
-		publishDir "${params.outdir}/cnvkit/${name}", mode:'copy'
+		publishDir "${params.outdir}/cnvkit/tumor/${name}", mode:'copy'
 
 
 	input:
-	tuple val(name), path(targetCov), path(antitargetCov)
-	path "reference"	
+	tuple val(name), path(targetCov), path(antitargetCov), path(reference)
 
 	output:
  path "*"	
 
 	script:
 	"""
- cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}.cnr
- cnvkit.py segment ${name}.cnr -o ${name}.cns
+ cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}_WeirdChr.cnr
+ cnvkit.py segment ${name}_WeirdChr.cnr -o ${name}_WeirdChr.cns
+
+cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
+cat ${name}_WeirdChr.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
 
  cnvkit.py scatter ${name}.cnr -s ${name}.cns --y-max=3 --y-min=-3 -o ${name}-scatter.png
  cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
@@ -149,6 +157,8 @@ process CNVKIT_TUMOR {
 
 process QC_STATS {
 	tag "QC_STATS on $name using $task.cpus CPUs and $task.memory memory"
+	label "small_mem"
+	label "small_cpus"
 
 	input:
 	tuple val(name), path(bam), path(bai)
@@ -200,16 +210,29 @@ samplesList = channel.fromList(params.samples)
 
  coverage
  .branch {
-					Normal: it.type == "normal"
-					Tumor: it.type == "tumor"
+					Normal: it[3] == "normal"
+					 return [it[0],it[1],it[2]] //without type
+					Tumor: it[3] == "tumor"
+					 return [it[0],it[1],it[2]] //without type
  	}.set{sorted}
 
-cnvkitReference = CNVKIT_REFERENCE(sorted.Normal.collect())
-tumorWithReference = sorted.Tumor.combine(cnvkitReference)
-tumorWithReference.view()
+	// sorted.Tumor.view()
+	// sorted.Normal.view()
 
- // stats =	QC_STATS(deduplicatedBam[0])
-	// mqcChannel = stats.mix(cutAdapted).mix(deduplicatedBam[1]).collect()
-	// mqcChannel.view()
- // MULTIQC(mqcChannel)
+	NormalOnlyCoveragePaths = sorted.Normal.map({return [it[1],it[2]]
+	})
+
+NormalOnlyCoveragePaths.view{"$it is normal with only paths"}
+
+NormalOnlyCoveragePaths.collect().view{"$it is COLLECTED normal with only paths"}
+
+ cnvkitReference = CNVKIT_REFERENCE(NormalOnlyCoveragePaths.collect())
+ tumorWithReference = sorted.Tumor.combine(cnvkitReference)
+ tumorWithReference.view{"$it is tumorWithReference"}
+	CNVKIT_TUMOR(tumorWithReference)
+
+  stats =	QC_STATS(deduplicatedBam[0])
+	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
+	 mqcChannel.view()
+  MULTIQC(mqcChannel)
 }
