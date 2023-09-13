@@ -1,5 +1,3 @@
-
-
 process FASTQC {
 	tag "FASTQC on $sample.name using $task.cpus CPUs and $task.memory memory"
 
@@ -83,12 +81,12 @@ process DEDUPLICATE {
 	
 	output:
 		tuple val(name), path("${name}.deduplicated.bam"), path("${name}.deduplicated.bai"), val(type)
-  path "*.txt"
+  // path "*.txt"
 
 	script:
 	"""
 	#picard UmiAwareMarkDuplicatesWithMateCigar I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt UMI_METRICS=${name}_umi_metrics.txt
-	picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
+	#picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
 	umi_tools dedup --umi-separator=_ --output-stats=${name}_dedup_stats.txt --stdin=${sortedBam} --stdout=${name}.deduplicated.bam
 	samtools index ${name}.deduplicated.bam ${name}.deduplicated.bai
  #samtools view -b -F 0x400 -o ${name}.deduplicated.bam ${name}.markdup.bam
@@ -98,8 +96,7 @@ process DEDUPLICATE {
 
 process CNVKIT_COVERAGE {
 	tag "CNVKIT_COVERAGE on $name using $task.cpus CPUs and $task.memory memory"
-		publishDir "${params.outdir}/cnvkit/${type}/${name}", mode:'copy'
-
+	publishDir "${params.outdir}/cnvkit/${type}/${name}", mode:'copy'
 
 	input:
 	tuple val(name), path(bam), path(bai), val(type)
@@ -110,14 +107,15 @@ process CNVKIT_COVERAGE {
 	script:
 	"""
 	cnvkit.py coverage ${bam} ${params.targetBed} -o ${name}.targetcoverage.cnn
+	#cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
 	cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
+
 	"""
 }
 
 process CNVKIT_REFERENCE {
 	tag "CNVKIT_REFERENCE using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/reference", mode:'copy'
-
 
 	input:
 	path "*"
@@ -133,11 +131,10 @@ process CNVKIT_REFERENCE {
 
 process CNVKIT_TUMOR {
 	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
-		publishDir "${params.outdir}/cnvkit/tumor/${name}", mode:'copy'
-
+	publishDir "${params.outdir}/cnvkit/tumor/${name}", mode:'copy'
 
 	input:
-	tuple val(name), path(targetCov), path(antitargetCov), path(reference)
+	tuple val(name), path(targetCov), path(antitargetCov), path(reference), path(vcf)
 
 	output:
  path "*"	
@@ -145,12 +142,12 @@ process CNVKIT_TUMOR {
 	script:
 	"""
  cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}_WeirdChr.cnr
- cnvkit.py segment ${name}_WeirdChr.cnr -o ${name}_WeirdChr.cns
+ cnvkit.py segment ${name}_WeirdChr.cnr --vcf $vcf -o ${name}_WeirdChr.cns
 
-cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
-cat ${name}_WeirdChr.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
+ cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
+ cat ${name}_WeirdChr.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
 
- cnvkit.py scatter ${name}.cnr -s ${name}.cns --y-max=3 --y-min=-3 -o ${name}-scatter.png
+ cnvkit.py scatter ${name}.cnr -s ${name}.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter.pdf
  cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
 	"""
 }
@@ -158,7 +155,6 @@ cat ${name}_WeirdChr.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$
 process QC_STATS {
 	tag "QC_STATS on $name using $task.cpus CPUs and $task.memory memory"
 	label "small_mem"
-	label "small_cpus"
 
 	input:
 	tuple val(name), path(bam), path(bai)
@@ -169,7 +165,7 @@ process QC_STATS {
 	script:
 	"""
 	samtools view -H $bam
-	qualimap bamqc -bam $bam -gff ${params.covbed} -outdir ${name} -outfile ${name}.qualimap -outformat HTML
+	qualimap bamqc -bam $bam -gff ${params.covbed} --java-mem-size=6G -outdir ${name} -outfile ${name}.qualimap -outformat HTML
 	samtools flagstat $bam > ${name}.flagstat
 	samtools stats $bam > ${name}.samstats
 	picard BedToIntervalList -I ${params.covbed} -O ${name}.interval_list -SD ${params.ref}/GRCh38-p10.dict
@@ -178,14 +174,35 @@ process QC_STATS {
 }
 
 
+process HAPLOCALLER {
+	tag "HaplotypeCaller on $name  using $task.cpus CPUs and $task.memory memory"
+	publishDir "${params.outdir}/HaplotypeCaller/", mode:'copy'
+	container "broadinstitute/gatk:4.1.3.0"
+	label "small_mem"
+
+	input:
+	tuple val(name), path(bam), path(bai)
+
+	output:
+	tuple val(name), path("${name}.g.vcf.gz")
+
+	script:
+	"""
+	 gatk --java-options "-Xmx4g" HaplotypeCaller  \
+   -R ${params.ref}/GRCh38-p10.fa \
+   -I $bam \
+   -O ${name}.g.vcf.gz \
+   -ERC GVCF
+	"""
+
+}
+
 process MULTIQC {
 	tag "MultiQC on all samples using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/multiqc/", mode:'copy'
 
 	input:
 	path('*')
-		// tuple val(name), path("*")
-		// path(markdupTxt)
 
 	output:
 	path "*"
@@ -206,33 +223,47 @@ samplesList = channel.fromList(params.samples)
 	bam = BWA_ALIGN(cutAdapted)
  sortedBam =	SORT_INDEX(bam)
 	deduplicatedBam = DEDUPLICATE(sortedBam)
-	coverage = CNVKIT_COVERAGE(deduplicatedBam[0])
 
- coverage
- .branch {
+	 deduplicatedBam.branch {  //this is for HAPLOCALLER process, to only call vars on tumor samples for later SNP allele frequencies
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
 					Tumor: it[3] == "tumor"
 					 return [it[0],it[1],it[2]] //without type
- 	}.set{sorted}
+ 	}.set{dedupBam}
 
-	// sorted.Tumor.view()
-	// sorted.Normal.view()
+		dedupBam.Tumor.view()
 
-	NormalOnlyCoveragePaths = sorted.Normal.map({return [it[1],it[2]]
+	coverage = CNVKIT_COVERAGE(deduplicatedBam[0])
+
+ coverage.branch {
+					Normal: it[3] == "normal"
+					 return [it[0],it[1],it[2]] //without type
+					Tumor: it[3] == "tumor"
+					 return [it[0],it[1],it[2]] //without type
+ 	}.set{coverage}
+
+
+	NormalOnlyCoveragePaths = coverage.Normal.map({return [it[1],it[2]]
 	})
 
-NormalOnlyCoveragePaths.view{"$it is normal with only paths"}
-
-NormalOnlyCoveragePaths.collect().view{"$it is COLLECTED normal with only paths"}
+//NormalOnlyCoveragePaths.view{"$it is normal with only paths"}
+//NormalOnlyCoveragePaths.collect().view{"$it is COLLECTED normal with only paths"}
 
  cnvkitReference = CNVKIT_REFERENCE(NormalOnlyCoveragePaths.collect())
- tumorWithReference = sorted.Tumor.combine(cnvkitReference)
- tumorWithReference.view{"$it is tumorWithReference"}
-	CNVKIT_TUMOR(tumorWithReference)
+
+
+ tumorWithReference = coverage.Tumor.combine(cnvkitReference)
+ // tumorWithReference.view{"$it is tumorWithReference"}
+	TumorVCFs = HAPLOCALLER(dedupBam.Tumor)
+
+	CoverageVcfTumor = tumorWithReference.join(TumorVCFs).view()
+
+	CNVKIT_TUMOR(CoverageVcfTumor)
 
   stats =	QC_STATS(deduplicatedBam[0])
-	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
-	 mqcChannel.view()
-  MULTIQC(mqcChannel)
+//	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
+	 mqcChannel = stats.mix(fastqced).collect()
+
+	 // mqcChannel.view()
+  //MULTIQC(mqcChannel)
 }
