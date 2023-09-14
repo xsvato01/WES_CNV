@@ -16,3 +16,4 @@ dependencies:
   - multiqc
   - cutadapt
   - cnvkit
+  - tabix
