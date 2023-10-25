@@ -142,12 +142,22 @@ process CNVKIT_TUMOR {
 	script:
 	"""
  cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}_WeirdChr.cnr
- cnvkit.py segment ${name}_WeirdChr.cnr --vcf $vcf -o ${name}_WeirdChr.cns
-
  cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
- cat ${name}_WeirdChr.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
+	
+	#hmm-germline
+	cnvkit.py segment ${name}.cnr -m cbs -v $vcf -o ${name}.cns 
 
- cnvkit.py scatter ${name}.cnr -s ${name}.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter.pdf
+	#cnvkit.py segmetrics -s ${name}.cn{s,r} --ci -o ${name}.segmetrics.cns
+#	cnvkit.py call ${name}.segmetrics.cns --filter ci -m clonal -v $vcf -o ${name}.calls.segmetrics.cns
+
+		cnvkit.py call ${name}.cns -v $vcf -m none --purity 1 -o ${name}.calls.segmetrics.cns
+
+
+ #cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
+ #cat ${name}.calls.segmetrics.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
+
+ cnvkit.py scatter ${name}.cnr -s ${name}.calls.segmetrics.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter-cbs-noScaling.pdf
+ #cnvkit.py scatter ${name}.cnr -s ${name}.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter-cbs-filtered.pdf
  cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
 	"""
 }
@@ -227,7 +237,7 @@ samplesList = channel.fromList(params.samples)
 	 deduplicatedBam.branch {  //this is for HAPLOCALLER process, to only call vars on tumor samples for later SNP allele frequencies
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
-					Tumor: it[3] == "tumor"
+					Tumor: it[3] == "patients"
 					 return [it[0],it[1],it[2]] //without type
  	}.set{dedupBam}
 
@@ -238,7 +248,7 @@ samplesList = channel.fromList(params.samples)
  coverage.branch {
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
-					Tumor: it[3] == "tumor"
+					Tumor: it[3] == "patients"
 					 return [it[0],it[1],it[2]] //without type
  	}.set{coverage}
 
