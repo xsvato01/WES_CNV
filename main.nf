@@ -106,7 +106,7 @@ process CNVKIT_COVERAGE {
 	
 	script:
 	"""
-	cnvkit.py coverage ${bam} ${params.targetBed} -o ${name}.targetcoverage.cnn
+	cnvkit.py coverage ${bam} ${params.targetBedGeneNames} -o ${name}.targetcoverage.cnn
 	#cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
 	cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
 
@@ -131,13 +131,14 @@ process CNVKIT_REFERENCE {
 
 process CNVKIT_TUMOR {
 	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${params.outdir}/cnvkit/tumor/${name}", mode:'copy'
+	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
 
 	input:
 	tuple val(name), path(targetCov), path(antitargetCov), path(reference), path(vcf)
 
 	output:
  path "*"	
+	tuple val(name), path("${name}.cns")
 
 	script:
 	"""
@@ -146,7 +147,6 @@ process CNVKIT_TUMOR {
 	
 	#hmm-germline
 	cnvkit.py segment ${name}.cnr -m cbs -v $vcf -o ${name}.cns 
-
 	#cnvkit.py segmetrics -s ${name}.cn{s,r} --ci -o ${name}.segmetrics.cns
 #	cnvkit.py call ${name}.segmetrics.cns --filter ci -m clonal -v $vcf -o ${name}.calls.segmetrics.cns
 
@@ -156,9 +156,28 @@ process CNVKIT_TUMOR {
  #cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
  #cat ${name}.calls.segmetrics.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
 
- cnvkit.py scatter ${name}.cnr -s ${name}.calls.segmetrics.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter-cbs-noScaling.pdf
+ cnvkit.py scatter ${name}.cnr -s ${name}.calls.segmetrics.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter.pdf
  #cnvkit.py scatter ${name}.cnr -s ${name}.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter-cbs-filtered.pdf
  cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
+	"""
+}
+
+process CNVKIT_PROCESS_TABLE{
+	tag "CNVKIT_PROCESS_TABLE on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
+
+	input:
+	tuple val(name), path(cns)
+
+	output:
+ path "*"	
+
+	script:
+	"""
+	head -n 1 138-2A.cns | tr -d '\n' > header.txt
+	bedtools map -c 4 -a <(bedtools sort -i <( tail -n +2 ${cns}) ) $params.GrCh38cytomap -o concat > ${name}Cytomap.txt
+ bedtools map -c 4,4,5 -a ${name}Cytomap.txt -b $params.GrCh38CNVdb -o collapse,count,collapse -g ${genomeLens}.txt> ${name}.souhrn.txt
+echo -e "\t CytoCords \t Citations \t Citations_count \t Cnv_type" >> header.txt
 	"""
 }
 
@@ -268,8 +287,8 @@ samplesList = channel.fromList(params.samples)
 
 	CoverageVcfTumor = tumorWithReference.join(TumorVCFs).view()
 
-	CNVKIT_TUMOR(CoverageVcfTumor)
-
+cnvOutput =	CNVKIT_TUMOR(CoverageVcfTumor)
+CNVKIT_PROCESS_TABLE(cnvOutput[1])
   stats =	QC_STATS(deduplicatedBam[0])
 //	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
 	 mqcChannel = stats.mix(fastqced).collect()
