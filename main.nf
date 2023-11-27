@@ -170,14 +170,15 @@ process CNVKIT_PROCESS_TABLE{
 	tuple val(name), path(cns)
 
 	output:
- path "*"	
+ path "${name}.souhrn.txt"	
 
 	script:
 	"""
-	head -n 1 138-2A.cns | tr -d '\n' > header.txt
-	bedtools map -c 4 -a <(bedtools sort -i <( tail -n +2 ${cns}) ) $params.GrCh38cytomap -o concat > ${name}Cytomap.txt
- bedtools map -c 4,4,5 -a ${name}Cytomap.txt -b $params.GrCh38CNVdb -o collapse,count,collapse -g ${genomeLens}.txt> ${name}.souhrn.txt
-echo -e "\t CytoCords \t Citations \t Citations_count \t Cnv_type" >> header.txt
+	head -n 1 ${cns} | tr -d '\\n' > header.txt
+	bedtools map -c 4 -a <(bedtools sort -i <( tail -n +2 ${cns})) -b $params.GrCh38cytomap -o concat > ${name}Cytomap.txt
+ bedtools map -c 4,4,5 -a ${name}Cytomap.txt -b $params.GrCh38CNVdb -o collapse,count,collapse -g ${params.genomeLens}> souhrn.txt
+ echo -e "\\t CytoCords \\t Citations \\t Citations_count \\t Cnv_type" >> ${name}.souhrn.txt
+	cat souhrn.txt >> ${name}.souhrn.txt
 	"""
 }
 
@@ -245,8 +246,7 @@ process MULTIQC {
 
 
 workflow {
-
-samplesList = channel.fromList(params.samples)
+ samplesList = channel.fromList(params.samples)
  fastqced =	FASTQC(samplesList)
 	cutAdapted = CUTADAPT(samplesList)
 	bam = BWA_ALIGN(cutAdapted)
@@ -260,10 +260,7 @@ samplesList = channel.fromList(params.samples)
 					 return [it[0],it[1],it[2]] //without type
  	}.set{dedupBam}
 
-		dedupBam.Tumor.view()
-
 	coverage = CNVKIT_COVERAGE(deduplicatedBam[0])
-
  coverage.branch {
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
@@ -271,28 +268,17 @@ samplesList = channel.fromList(params.samples)
 					 return [it[0],it[1],it[2]] //without type
  	}.set{coverage}
 
-
-	NormalOnlyCoveragePaths = coverage.Normal.map({return [it[1],it[2]]
-	})
-
-//NormalOnlyCoveragePaths.view{"$it is normal with only paths"}
-//NormalOnlyCoveragePaths.collect().view{"$it is COLLECTED normal with only paths"}
+	 NormalOnlyCoveragePaths = coverage.Normal.map({return [it[1],it[2]]
+	 })
 
  cnvkitReference = CNVKIT_REFERENCE(NormalOnlyCoveragePaths.collect())
-
-
  tumorWithReference = coverage.Tumor.combine(cnvkitReference)
- // tumorWithReference.view{"$it is tumorWithReference"}
 	TumorVCFs = HAPLOCALLER(dedupBam.Tumor)
-
-	CoverageVcfTumor = tumorWithReference.join(TumorVCFs).view()
-
-cnvOutput =	CNVKIT_TUMOR(CoverageVcfTumor)
-CNVKIT_PROCESS_TABLE(cnvOutput[1])
-  stats =	QC_STATS(deduplicatedBam[0])
+	CoverageVcfTumor = tumorWithReference.join(TumorVCFs)//.view()
+ cnvOutput =	CNVKIT_TUMOR(CoverageVcfTumor)
+ CNVKIT_PROCESS_TABLE(cnvOutput[1])
+ stats =	QC_STATS(deduplicatedBam[0])
 //	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
-	 mqcChannel = stats.mix(fastqced).collect()
-
-	 // mqcChannel.view()
+	mqcChannel = stats.mix(fastqced).collect()
   //MULTIQC(mqcChannel)
 }
