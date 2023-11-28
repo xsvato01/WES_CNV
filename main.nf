@@ -165,7 +165,9 @@ process CNVKIT_TUMOR {
 process CNVKIT_PROCESS_TABLE{
 	tag "CNVKIT_PROCESS_TABLE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
-
+	label "small_mem"
+	label "small_cpus"
+	
 	input:
 	tuple val(name), path(cns)
 
@@ -174,10 +176,10 @@ process CNVKIT_PROCESS_TABLE{
 
 	script:
 	"""
-	head -n 1 ${cns} | tr -d '\\n' > header.txt
+	head -n 1 ${cns} | tr -d '\\n' > ${name}.souhrn.txt
 	bedtools map -c 4 -a <(bedtools sort -i <( tail -n +2 ${cns})) -b $params.GrCh38cytomap -o concat > ${name}Cytomap.txt
- bedtools map -c 4,4,5 -a ${name}Cytomap.txt -b $params.GrCh38CNVdb -o collapse,count,collapse -g ${params.genomeLens}> souhrn.txt
- echo -e "\\t CytoCords \\t Citations \\t Citations_count \\t Cnv_type" >> ${name}.souhrn.txt
+ bedtools map -c 4,4,5,6,7,8 -a ${name}Cytomap.txt -b $params.GrCh38CNV -o collapse,count,collapse,sum,sum,sum -g ${params.genomeLens}> souhrn.txt
+ echo -e "\\t CytoCords \\t PubMedID \\t Citations_count \\t Cnv_type \\t samplesizeCount	\\t observedgainsCount	observedlossesCount "">> ${name}.souhrn.txt
 	cat souhrn.txt >> ${name}.souhrn.txt
 	"""
 }
