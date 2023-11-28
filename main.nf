@@ -179,7 +179,7 @@ process CNVKIT_PROCESS_TABLE{
 	head -n 1 ${cns} | tr -d '\\n' > ${name}.souhrn.txt
 	bedtools map -c 4 -a <(bedtools sort -i <( tail -n +2 ${cns})) -b $params.GrCh38cytomap -o concat > ${name}Cytomap.txt
  bedtools map -c 4,4,5,6,7,8 -a ${name}Cytomap.txt -b $params.GrCh38CNV -o collapse,count,collapse,sum,sum,sum -g ${params.genomeLens}> souhrn.txt
- echo -e "\\t CytoCords \\t PubMedID \\t Citations_count \\t Cnv_type \\t samplesizeCount	\\t observedgainsCount	observedlossesCount "">> ${name}.souhrn.txt
+ echo -e "\\tCytoCords\\tPubMedID\\tCitations_count\\tCnv_type\\tsamplesizeCount\\tobservedgainsCount\\tobservedlossesCount">> ${name}.souhrn.txt
 	cat souhrn.txt >> ${name}.souhrn.txt
 	"""
 }
