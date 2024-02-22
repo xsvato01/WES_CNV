@@ -1,5 +1,8 @@
 process FASTQC {
 	tag "FASTQC on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "s_mem"
+	label "s_cpu"
+
 
 	input:
 	val(sample)
@@ -9,14 +12,15 @@ process FASTQC {
 
 	script:
 	"""
-	fastqc ${sample.path}_R1.fastq.gz ${sample.path}_R2.fastq.gz -o ./
+	fastqc ${sample.name}_trim_R2.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R1.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R2.fastq.gz-o ./
 	"""
 }
 
 process CUTADAPT{
 	tag "CUTADAPT on $sample.name using $task.cpus CPUs and $task.memory memory" 
-	publishDir "${params.outdir}/trimmedFQ/", mode:'copy'
-	label "small_mem"
+	// publishDir "${params.outdir}/trimmedFQ/", mode:'copy'
+	label "m_mem"
+	label "s_cpu"
 		
 	input:
 	val(sample)
@@ -26,16 +30,16 @@ process CUTADAPT{
 
 	script:
 	"""
-	cutadapt -m 10 -q 20 -j 8 -o ${sample.name}_trim_R1.fastq.gz -p ${sample.name}_trim_R2.fastq.gz ${sample.path}_R1.fastq.gz ${sample.path}_R2.fastq.gz
+	echo $sample
+	cutadapt -m 10 -q 20 -j 8 -o ${sample.name}_trim_R1.fastq.gz -p ${sample.name}_trim_R2.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R1.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R2.fastq.gz
 	"""
 }
 
 
 process BWA_ALIGN {
 	tag "BWA_ALIGN on $name using $task.cpus CPUs and $task.memory memory"
-	label "small_mem"
-	label "small_cpus"
-
+	label "m_mem"
+	label "l_cpu"
 
 	input:
 	tuple val(name), path(reads), val(type)
@@ -46,15 +50,16 @@ process BWA_ALIGN {
 	script:
 	rg = "\"@RG\\tID:${name}\\tSM:${name}\\tLB:${name}\\tPL:ILLUMINA\""
 	"""
-	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex} ${reads}* > ${name}.sam
-	samtools view -Sb ${name}.sam -o ${name}.bam
+	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex} ${reads}* | samtools view -Sb -o ${name}.bam
 	"""
 }
 
 
 process SORT_INDEX {
-  tag "Sort index on $name using $task.cpus CPUs and $task.memory memory"
-  publishDir "${params.outdir}/mapped/${name}", mode:'copy'
+ tag "Sort index on $name using $task.cpus CPUs and $task.memory memory"
+  // publishDir "${params.outdir}/mapped/${name}", mode:'copy'
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(bam), val(type)
@@ -72,16 +77,15 @@ process SORT_INDEX {
 
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${params.outdir}/mapped/${name}", mode:'copy'
-	label "small_mem"
-
+	// publishDir "${params.outdir}/mapped/${name}", mode:'copy'
+	label "m_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(sortedBam), path(sortedBai), val(type)
 	
 	output:
 		tuple val(name), path("${name}.deduplicated.bam"), path("${name}.deduplicated.bai"), val(type)
-  // path "*.txt"
 
 	script:
 	"""
@@ -89,7 +93,6 @@ process DEDUPLICATE {
 	#picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
 	umi_tools dedup --umi-separator=_ --output-stats=${name}_dedup_stats.txt --stdin=${sortedBam} --stdout=${name}.deduplicated.bam
 	samtools index ${name}.deduplicated.bam ${name}.deduplicated.bai
- #samtools view -b -F 0x400 -o ${name}.deduplicated.bam ${name}.markdup.bam
 	"""
 }
 
@@ -97,6 +100,8 @@ process DEDUPLICATE {
 process CNVKIT_COVERAGE {
 	tag "CNVKIT_COVERAGE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/${type}/${name}", mode:'copy'
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(bam), path(bai), val(type)
@@ -107,15 +112,15 @@ process CNVKIT_COVERAGE {
 	script:
 	"""
 	cnvkit.py coverage ${bam} ${params.targetBedGeneNames} -o ${name}.targetcoverage.cnn
-	#cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
 	cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
-
 	"""
 }
 
 process CNVKIT_REFERENCE {
 	tag "CNVKIT_REFERENCE using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/reference", mode:'copy'
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	path "*"
@@ -132,6 +137,8 @@ process CNVKIT_REFERENCE {
 process CNVKIT_TUMOR {
 	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(targetCov), path(antitargetCov), path(reference), path(vcf)
@@ -165,8 +172,8 @@ process CNVKIT_TUMOR {
 process CNVKIT_PROCESS_TABLE{
 	tag "CNVKIT_PROCESS_TABLE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
-	label "small_mem"
-	label "small_cpus"
+	label "s_mem"
+	label "s_cpu"
 	
 	input:
 	tuple val(name), path(cns)
@@ -186,13 +193,14 @@ process CNVKIT_PROCESS_TABLE{
 
 process QC_STATS {
 	tag "QC_STATS on $name using $task.cpus CPUs and $task.memory memory"
-	label "small_mem"
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(bam), path(bai)
 
 	output:
-	 path "*"
+	path "*"
 	
 	script:
 	"""
@@ -210,7 +218,8 @@ process HAPLOCALLER {
 	tag "HaplotypeCaller on $name  using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/HaplotypeCaller/", mode:'copy'
 	container "broadinstitute/gatk:4.1.3.0"
-	label "small_mem"
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	tuple val(name), path(bam), path(bai)
@@ -220,7 +229,7 @@ process HAPLOCALLER {
 
 	script:
 	"""
-	 gatk --java-options "-Xmx4g" HaplotypeCaller  \
+	gatk --java-options "-Xmx4g" HaplotypeCaller  \
    -R ${params.ref}/GRCh38-p10.fa \
    -I $bam \
    -O ${name}.g.vcf.gz \
@@ -232,6 +241,8 @@ process HAPLOCALLER {
 process MULTIQC {
 	tag "MultiQC on all samples using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/multiqc/", mode:'copy'
+	label "s_mem"
+	label "s_cpu"
 
 	input:
 	path('*')
@@ -249,8 +260,8 @@ process MULTIQC {
 
 workflow {
  samplesList = channel.fromList(params.samples)
- fastqced =	FASTQC(samplesList)
 	cutAdapted = CUTADAPT(samplesList)
+ fastqced =	FASTQC(cutAdapted)
 	bam = BWA_ALIGN(cutAdapted)
  sortedBam =	SORT_INDEX(bam)
 	deduplicatedBam = DEDUPLICATE(sortedBam)
@@ -258,7 +269,7 @@ workflow {
 	 deduplicatedBam.branch {  //this is for HAPLOCALLER process, to only call vars on tumor samples for later SNP allele frequencies
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
-					Tumor: it[3] == "patients"
+					Tumor: it[3] == "proband"
 					 return [it[0],it[1],it[2]] //without type
  	}.set{dedupBam}
 
@@ -266,7 +277,7 @@ workflow {
  coverage.branch {
 					Normal: it[3] == "normal"
 					 return [it[0],it[1],it[2]] //without type
-					Tumor: it[3] == "patients"
+					Tumor: it[3] == "proband"
 					 return [it[0],it[1],it[2]] //without type
  	}.set{coverage}
 
@@ -280,7 +291,6 @@ workflow {
  cnvOutput =	CNVKIT_TUMOR(CoverageVcfTumor)
  CNVKIT_PROCESS_TABLE(cnvOutput[1])
  stats =	QC_STATS(deduplicatedBam[0])
-//	 mqcChannel = stats.mix(fastqced).mix(deduplicatedBam[1]).collect()
 	mqcChannel = stats.mix(fastqced).collect()
-  //MULTIQC(mqcChannel)
+  MULTIQC(mqcChannel)
 }
