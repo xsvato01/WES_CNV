@@ -1,25 +1,8 @@
-process FASTQC {
-	tag "FASTQC on $sample.name using $task.cpus CPUs and $task.memory memory"
-	label "s_mem"
-	label "s_cpu"
-
-
-	input:
-	val(sample)
-
-	output:
-	path '*'
-
-	script:
-	"""
-	fastqc ${sample.name}_trim_R2.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R1.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R2.fastq.gz-o ./
-	"""
-}
 
 process CUTADAPT{
 	tag "CUTADAPT on $sample.name using $task.cpus CPUs and $task.memory memory" 
 	// publishDir "${params.outdir}/trimmedFQ/", mode:'copy'
-	label "m_mem"
+	label "s_mem"
 	label "s_cpu"
 		
 	input:
@@ -30,15 +13,32 @@ process CUTADAPT{
 
 	script:
 	"""
-	echo $sample
-	cutadapt -m 10 -q 20 -j 8 -o ${sample.name}_trim_R1.fastq.gz -p ${sample.name}_trim_R2.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R1.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R2.fastq.gz
+	echo CUTADAPT
+	cutadapt -m 10 -q 20 -j ${task.cpus} -o ${sample.name}_trim_R1.fastq.gz -p ${sample.name}_trim_R2.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R1.fastq.gz ${params.rawDataDir}/${sample.run}/raw_fastq/${sample.name}_R2.fastq.gz
 	"""
 }
 
+process FASTQC {
+	tag "FASTQC on $name using $task.cpus CPUs and $task.memory memory"
+	label "s_mem"
+	label "s_cpu"
+
+	input:
+	tuple val(name), path(fastqs), val(type)
+
+	output:
+	path '*'
+
+	script:
+	"""
+	echo FASTQC
+	fastqc $fastqs -o ./
+	"""
+}
 
 process BWA_ALIGN {
 	tag "BWA_ALIGN on $name using $task.cpus CPUs and $task.memory memory"
-	label "m_mem"
+	label "xl_mem"
 	label "l_cpu"
 
 	input:
@@ -50,7 +50,9 @@ process BWA_ALIGN {
 	script:
 	rg = "\"@RG\\tID:${name}\\tSM:${name}\\tLB:${name}\\tPL:ILLUMINA\""
 	"""
-	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex} ${reads}* | samtools view -Sb -o ${name}.bam
+	echo BWA
+	bwa mem -R ${rg} -t ${task.cpus} ${params.refindex}/Homo_sapiens_assembly38.fasta.64 ${reads} > ${name}.sam
+	samtools view -Sb ${name}.sam -o ${name}.bam
 	"""
 }
 
@@ -58,7 +60,7 @@ process BWA_ALIGN {
 process SORT_INDEX {
  tag "Sort index on $name using $task.cpus CPUs and $task.memory memory"
   // publishDir "${params.outdir}/mapped/${name}", mode:'copy'
-	label "s_mem"
+	label "m_mem"
 	label "s_cpu"
 
 	input:
@@ -70,6 +72,7 @@ process SORT_INDEX {
 
 	script:
 	"""
+	echo SORT_INDEX
 	samtools sort ${name}.bam -o ${name}.sorted.bam
 	samtools index ${name}.sorted.bam ${name}.sorted.bai
 	"""
@@ -78,8 +81,8 @@ process SORT_INDEX {
 process DEDUPLICATE {
 	tag "DEDUPLICATE on $name using $task.cpus CPUs and $task.memory memory"
 	// publishDir "${params.outdir}/mapped/${name}", mode:'copy'
-	label "m_mem"
-	label "s_cpu"
+	label "xl_mem"
+	label "m_cpu"
 
 	input:
 	tuple val(name), path(sortedBam), path(sortedBai), val(type)
@@ -89,8 +92,7 @@ process DEDUPLICATE {
 
 	script:
 	"""
-	#picard UmiAwareMarkDuplicatesWithMateCigar I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt UMI_METRICS=${name}_umi_metrics.txt
-	#picard MarkDuplicates I=${sortedBam} O=${name}.markdup.bam M=${name}.markdup.txt
+	echo DEDUPLICATE
 	umi_tools dedup --umi-separator=_ --output-stats=${name}_dedup_stats.txt --stdin=${sortedBam} --stdout=${name}.deduplicated.bam
 	samtools index ${name}.deduplicated.bam ${name}.deduplicated.bai
 	"""
@@ -100,7 +102,7 @@ process DEDUPLICATE {
 process CNVKIT_COVERAGE {
 	tag "CNVKIT_COVERAGE on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/cnvkit/${type}/${name}", mode:'copy'
-	label "s_mem"
+	label "m_mem"
 	label "s_cpu"
 
 	input:
@@ -111,6 +113,7 @@ process CNVKIT_COVERAGE {
 	
 	script:
 	"""
+	echo CNVKIT_COVERAGE
 	cnvkit.py coverage ${bam} ${params.targetBedGeneNames} -o ${name}.targetcoverage.cnn
 	cnvkit.py coverage ${bam} ${params.antitargetBed} -o ${name}.antitargetcoverage.cnn
 	"""
@@ -130,13 +133,14 @@ process CNVKIT_REFERENCE {
 
 	script:
 	"""
-	cnvkit.py reference *coverage.cnn -f ${params.ref}/GRCh38-p10.fa -o Reference.cnn
+	echo CNVKIT_REFERENCE
+	cnvkit.py reference *coverage.cnn -f ${params.ref}.fasta -o Reference.cnn
 	"""
 }
 
 process CNVKIT_TUMOR {
 	tag "CNVKIT_TUMOR on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
+	publishDir "${params.outdir}/cnvkit/proband/${name}", mode:'copy'
 	label "s_mem"
 	label "s_cpu"
 
@@ -149,29 +153,24 @@ process CNVKIT_TUMOR {
 
 	script:
 	"""
+	echo CNVKIT_TUMOR
  cnvkit.py fix ${targetCov} ${antitargetCov} ${reference} -o ${name}_WeirdChr.cnr
  cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
 	
 	#hmm-germline
-	cnvkit.py segment ${name}.cnr -m cbs -v $vcf -o ${name}.cns 
-	#cnvkit.py segmetrics -s ${name}.cn{s,r} --ci -o ${name}.segmetrics.cns
-#	cnvkit.py call ${name}.segmetrics.cns --filter ci -m clonal -v $vcf -o ${name}.calls.segmetrics.cns
+	#	cnvkit.py segment ${name}.cnr -m cbs -v $vcf -o ${name}.cns 
 
-		cnvkit.py call ${name}.cns -v $vcf -m none --purity 1 -o ${name}.calls.segmetrics.cns
-
-
- #cat ${name}_WeirdChr.cnr | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cnr
- #cat ${name}.calls.segmetrics.cns | awk -v OFS="\\t" '(\$1!~"GL|MT|KI") {\$1=\$1;print \$0}' > ${name}.cns
+	cnvkit.py segment ${name}.cnr -m cbs -o ${name}.cns 
+	cnvkit.py call ${name}.cns -v $vcf -m none --purity 1 -o ${name}.calls.segmetrics.cns
 
  cnvkit.py scatter ${name}.cnr -s ${name}.calls.segmetrics.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter.pdf
- #cnvkit.py scatter ${name}.cnr -s ${name}.cns -v $vcf --y-max=3 --y-min=-3 -o ${name}-scatter-cbs-filtered.pdf
  cnvkit.py diagram ${name}.cnr -s ${name}.cns -o ${name}-diagram.pdf
 	"""
 }
 
 process CNVKIT_PROCESS_TABLE{
 	tag "CNVKIT_PROCESS_TABLE on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${params.outdir}/cnvkit/patients/${name}", mode:'copy'
+	publishDir "${params.outdir}/cnvkit/proband/${name}", mode:'copy'
 	label "s_mem"
 	label "s_cpu"
 	
@@ -193,11 +192,11 @@ process CNVKIT_PROCESS_TABLE{
 
 process QC_STATS {
 	tag "QC_STATS on $name using $task.cpus CPUs and $task.memory memory"
-	label "s_mem"
+	label "l_mem"
 	label "s_cpu"
 
 	input:
-	tuple val(name), path(bam), path(bai)
+	tuple val(name), path(bam), path(bai), val(type)
 
 	output:
 	path "*"
@@ -208,8 +207,8 @@ process QC_STATS {
 	qualimap bamqc -bam $bam -gff ${params.covbed} --java-mem-size=6G -outdir ${name} -outfile ${name}.qualimap -outformat HTML
 	samtools flagstat $bam > ${name}.flagstat
 	samtools stats $bam > ${name}.samstats
-	picard BedToIntervalList -I ${params.covbed} -O ${name}.interval_list -SD ${params.ref}/GRCh38-p10.dict
-	picard CollectHsMetrics -I $bam -BAIT_INTERVALS ${name}.interval_list -TARGET_INTERVALS ${name}.interval_list -R ${params.ref}/GRCh38-p10.fa -O ${name}.aln_metrics
+	picard BedToIntervalList -I ${params.covbed} -O ${name}.interval_list -SD ${params.ref}.dict
+	picard CollectHsMetrics -I $bam -BAIT_INTERVALS ${name}.interval_list -TARGET_INTERVALS ${name}.interval_list -R ${params.ref}.fasta -O ${name}.aln_metrics
 	"""
 }
 
@@ -218,7 +217,7 @@ process HAPLOCALLER {
 	tag "HaplotypeCaller on $name  using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/HaplotypeCaller/", mode:'copy'
 	container "broadinstitute/gatk:4.1.3.0"
-	label "s_mem"
+	label "m_mem"
 	label "s_cpu"
 
 	input:
@@ -230,7 +229,7 @@ process HAPLOCALLER {
 	script:
 	"""
 	gatk --java-options "-Xmx4g" HaplotypeCaller  \
-   -R ${params.ref}/GRCh38-p10.fa \
+   -R ${params.ref}.fasta \
    -I $bam \
    -O ${name}.g.vcf.gz \
    -ERC GVCF
@@ -241,7 +240,7 @@ process HAPLOCALLER {
 process MULTIQC {
 	tag "MultiQC on all samples using $task.cpus CPUs and $task.memory memory"
 	publishDir "${params.outdir}/multiqc/", mode:'copy'
-	label "s_mem"
+	label "m_mem"
 	label "s_cpu"
 
 	input:
@@ -257,9 +256,27 @@ process MULTIQC {
 
 }
 
+process DORADO {
+container 'ontresearch/dorado:sha087b7b8d8fc047f531926ba064c2f2503fe9a25a'
+
+	input:
+	val(vse)
+
+	output:
+	path "*"
+
+	script:
+	"""
+	sleep infinity
+	multiqc . -n MultiQC.html
+	"""
+
+}
 
 workflow {
  samplesList = channel.fromList(params.samples)
+		// DORADO(samplesList.collect())
+
 	cutAdapted = CUTADAPT(samplesList)
  fastqced =	FASTQC(cutAdapted)
 	bam = BWA_ALIGN(cutAdapted)
